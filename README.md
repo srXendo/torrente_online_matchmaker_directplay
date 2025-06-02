@@ -1,5 +1,5 @@
-# directplay8_matchmaker_torrente \n
-Proof of concept. MatchMaker torrente online v1.1 \n
-DirectPlay 8 Protocol: Reliable \n
-requeriments: nodejs 20.16.0. \n
-execute: node index.js \n
+# directplay8_matchmaker_torrente <br>
+Proof of concept. MatchMaker torrente online v1.1 <br>
+DirectPlay 8 Protocol: Reliable <br>
+requeriments: nodejs 20.16.0. <br>
+execute: node index.js <br>
