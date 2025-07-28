@@ -2,7 +2,7 @@
 const cParty = require('./party')
 const { Worker } = require('worker_threads');
 const path = require('path');
-
+const start_apis = require('./../apis/apis')
 
 module.exports = class manager_party{
     members = {}
@@ -10,6 +10,8 @@ module.exports = class manager_party{
     #interv = null;
     constructor(){
         this.init_update_thread()
+        const startApi = start_apis.bind(this, this)
+        startApi()
     }
     add_member(ip, port, payload, refresh){
         if(!this.members[ip]){

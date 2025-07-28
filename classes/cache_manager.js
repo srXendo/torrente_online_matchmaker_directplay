@@ -1,4 +1,5 @@
 const c_entity = require('./entity')
+
 const { parentPort } = require('worker_threads');
 const trys_delete_entity = 7 * 8
 const expires_refresh = 1000 * 60 * 2
@@ -10,6 +11,8 @@ module.exports = class cache_manager{
     #server;
     constructor(server){
         this.#server = server;
+
+        
     }
     send_tick_to_address_port(address, port){
         this.entity_try_update(address, port)
