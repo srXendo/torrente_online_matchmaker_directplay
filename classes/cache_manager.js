@@ -1,129 +1,124 @@
-const c_entity = require('./entity')
+const c_entity = require('./entity');
 const { parentPort } = require('worker_threads');
-const trys_delete_entity = 7 * 8
-const expires_refresh = 1000 * 60 * 2
+const MAX_TRYS = 7 * 8;
+const REFRESH_EXPIRATION = 1000 * 60 * 2; // 2 minutos
 const https = require('https');
 
-module.exports = class cache_manager{
-    entities = {}
-    refresh = false
+module.exports = class cache_manager {
+    entities = {};
+    refresh = false;
     #server;
-    constructor(server){
+
+    constructor(server) {
         this.#server = server;
     }
-    send_tick_to_address_port(address, port){
-        this.entity_try_update(address, port)
-        console.log('intento refrescar la entidad')
-        return new Promise(async(resolve, reject)=>{
-            if(!this.entity_get_refresh(address, port)){
-                resolve(false)
-            }else{
-                if(new Date().getTime() - this.entity_get_refresh(address, port) < expires_refresh && this.entity_get_trys(address, port) <= trys_delete_entity){
 
-                    this.#server.send(Buffer.from('000231f2011242191fb8bb154e4401763631007932', 'hex'), port, address, (err)=>{
-                        if(err){
-                            console.error(new Error(err))
-                            resolve(false)
-                        }
-                        resolve(true)
-                    })
+    async send_tick_to_address_port(address, port) {
+        this.entity_try_update(address, port);
 
-                }else if(this.entity_get_trys(address, port) > trys_delete_entity){
-                    //envia señal para borrar esta entidad
-                    this.delete_entity(address, port)
-                    parentPort.postMessage(`${'DELETE'}---${address}---${port}`);
-                    resolve(false)
-                }else{
-                    resolve(false)
+        const lastRefresh = this.entity_get_refresh(address, port);
+        const trys = this.entity_get_trys(address, port);
+        const now = Date.now();
+
+        console.log(`Entidad: ${address}:${port} | trys=${trys} | lastRefresh=${lastRefresh ? new Date(lastRefresh).toISOString() : 'n/a'} | diff=${lastRefresh ? now - lastRefresh : 'n/a'}ms`);
+
+        // Si no hay fecha de actualización, forzamos la eliminación
+        if (!lastRefresh) {
+            console.warn(`lastRefresh vacío para ${address}:${port} — eliminando por seguridad`);
+            this.delete_entity(address, port);
+            parentPort.postMessage(`DELETE---${address}---${port}`);
+            return false;
+        }
+
+        // Si venció el tiempo y se superó el límite de intentos, eliminamos
+        if ((now - lastRefresh) > REFRESH_EXPIRATION || trys > MAX_TRYS) {
+            console.warn(`Eliminando ${address}:${port} — inactivo por ${now - lastRefresh}ms, trys=${trys}`);
+            this.delete_entity(address, port);
+            parentPort.postMessage(`DELETE---${address}---${port}`);
+            return false;
+        }
+
+        // Si está todo bien, enviamos el paquete UDP de ping
+        const payload = Buffer.from('000231f2011242191fb8bb154e4401763631007932', 'hex');
+
+        return new Promise((resolve) => {
+            this.#server.send(payload, port, address, (err) => {
+                if (err) {
+                    console.error(new Error(`Error enviando paquete a ${address}:${port}: ${err.message}`));
+                    return resolve(false);
                 }
-            }
-        })
+                resolve(true);
+            });
+        });
     }
-    send_update_tick(){
-        
-        const arr_entities = this.get_arr_entities()
-        return Promise.all(arr_entities.map((obj, i)=>this.send_tick_to_address_port(obj.address, obj.port)))
+
+    send_update_tick() {
+        return Promise.all(this.get_arr_entities().map(e => this.send_tick_to_address_port(e.address, e.port)));
     }
-    
-    entity_get_trys(address, port){
-        if(!this.entities[address]){
-            return false
-        }
-        if(!this.entities[address][port]){
-            return false
-        }
-        return this.entities[address][port].entity_get_trys()
+
+    entity_get_trys(address, port) {
+        return this.entities[address]?.[port]?.entity_get_trys() || 0;
     }
-    entity_get_refresh(address, port){
-        if(!this.entities[address]){
-            return false
-        }
-        if(!this.entities[address][port]){
-            return false
-        }
-        return this.entities[address][port].entity_get_refresh()
+
+    entity_get_refresh(address, port) {
+        return this.entities[address]?.[port]?.entity_get_refresh() || null;
     }
-    entity_try_update(address, port){
-        if(!this.entities[address]){
-            return false
-        }
-        if(!this.entities[address][port]){
-            return false
-        }
-        this.entities[address][port].entity_try_update()
-    }     
-    entity_update(address, port){
-        if(!this.entities[address]){
-            return false
-        }
-        if(!this.entities[address][port]){
-            return false
-        }
-        this.entities[address][port].update_refresh()
+
+    entity_try_update(address, port) {
+        return this.entities[address]?.[port]?.entity_try_update() || false;
     }
-    is_refresh(){
-        return this.refresh
+
+    entity_update(address, port) {
+        return this.entities[address]?.[port]?.update_refresh() || false;
     }
-    set_refresh(is_refresh){
-            this.refresh = is_refresh;
+
+    is_refresh() {
+        return this.refresh;
     }
-    add_entity(address, port){
-        if(!this.entities[address]){
-            this.entities[address] = {}
-        }
-        if(!this.entities[address][port]){
-            this.entities[address][port] = new c_entity(address, port)
+
+    set_refresh(isRefresh) {
+        this.refresh = isRefresh;
+    }
+
+    add_entity(address, port) {
+        if (!this.entities[address]) this.entities[address] = {};
+
+        if (!this.entities[address][port]) {
+            console.log(`Añadiendo entidad nueva: ${address}:${port}`);
+            this.entities[address][port] = new c_entity(address, port);
+        } else {
+            console.log(`Ya existe: ${address}:${port}`);
         }
     }
-    get_parties(){
-        return this.entities
+
+    get_parties() {
+        return this.entities;
     }
-    get_arr_entities(){
-        const entities = this.get_parties()
-        const response = []
-        for(let ip in entities){
-            for(let port in entities[ip]){
-                if(entities[ip][port]) {
-                    response.push(entities[ip][port]);
-                }
+
+    get_arr_entities() {
+        const result = [];
+        for (const ip in this.entities) {
+            for (const port in this.entities[ip]) {
+                const entity = this.entities[ip][port];
+                if (entity) result.push(entity);
             }
         }
-        return response
+        return result;
     }
-    delete_entity(address, port){
-        if(!this.entities[address]){
-            console.error(new Error(`No existe la entidad con ip y puerto:\n${address}:${port}`))
-            return false
+
+    delete_entity(address, port) {
+        if (!this.entities[address]?.[port]) {
+            console.error(new Error(`No existe la entidad: ${address}:${port}`));
+            return false;
         }
-        if(!this.entities[address][port]){
-            console.error(new Error(`No existe la entidad con ip y puerto:\n${address}:${port}`))
-            return false
-        }
+
         delete this.entities[address][port];
-        if(Object.keys(this.entities[address]).length === 0){
+
+        if (Object.keys(this.entities[address]).length === 0) {
             delete this.entities[address];
         }
-        console.log(`entidad eliminada eliminada: ${address}:${port}`)
-        return 
+
+        console.log(`🗑 Entidad eliminada: ${address}:${port}`);
+        return true;
     }
-}
+};
