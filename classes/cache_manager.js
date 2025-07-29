@@ -2,7 +2,7 @@ const c_entity = require('./entity');
 const { parentPort } = require('worker_threads');
 const https = require('https');
 
-const MAX_TRYS = 3; // Solo 2 intentos antes de aplicar la eliminación casi inmediata
+const MAX_TRYS = 3; // Solo 3 intentos antes de aplicar la eliminación casi inmediata
 const MAX_WAIT_RESPONSE = 2000; // Espera máxima para recibir respuesta (2s)
 
 module.exports = class cache_manager {
