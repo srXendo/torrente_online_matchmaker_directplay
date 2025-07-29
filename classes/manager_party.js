@@ -1,133 +1,135 @@
-
-const cParty = require('./party')
+const cParty = require('./party');
 const { Worker } = require('worker_threads');
 const path = require('path');
 
-
-module.exports = class manager_party{
-    members = {}
+module.exports = class ManagerParty {
+    members = {};
     #worker = null;
-    #interv = null;
-    constructor(){
-        this.init_update_thread()
+
+    constructor() {
+        this.#initUpdateThread();
     }
-    add_member(ip, port, payload, refresh){
-        if(!this.members[ip]){
-            this.members[ip] = {}
+
+    add_member(ip, port, payload, refresh = false) {
+        if (!this.members[ip]) {
+            this.members[ip] = {};
         }
-        if(!this.members[ip][port]){
-            this.members[ip][port] = {}
-            
+        const portStr = String(port);
+        if (this.members[ip][portStr]) {
+            if (refresh && payload) {
+                this.members[ip][portStr].payload = payload;
+                console.log(`🔄 Partida actualizado ${ip}:${portStr}`);
+            }
+            return;
         }
-        this.members[ip][port] = new cParty(ip, port, payload, refresh)
-        this.#worker.postMessage(`${ip}---${port}`);
+        this.members[ip][portStr] = new cParty(ip, portStr, payload, refresh);
+        console.log(`🟢 Partida añadida: ${ip}:${portStr}`);
+        if (this.#worker) {
+            this.#worker.postMessage(`${ip}---${portStr}`);
+        }
     }
-    get_parties(){
-        return this.members
+    
+    update_party(ip, port, hex_payload) {
+        const party = this.members?.[ip]?.[port];
+        if (!party) {
+            console.warn(`⚠️ Partida no encontrada para actualizar: ${ip}:${port}`);
+            return;
+        }
+        party.update_data_party(hex_payload);
     }
-    get_arr_parties(){
-        const partys = this.get_parties()
-        const response = []
-        for(let ip in partys){
-            for(let port in partys[ip]){
-                response.push(partys[ip][port])
+
+    delete_party(ip, port) {
+        if (!this.members?.[ip]?.[port]) {
+            console.warn(`⚠️ No existe la partida para eliminar: ${ip}:${port}`);
+            return;
+        }
+
+        delete this.members[ip][port];
+
+        if (Object.keys(this.members[ip]).length === 0) {
+            delete this.members[ip];
+        }
+
+        console.log(`❌ Partida eliminada: ${ip}:${port}`);
+    }
+
+    get_parties() {
+        return this.members;
+    }
+
+    get_arr_parties() {
+        return Object.entries(this.members).flatMap(([ip, ports]) =>
+            Object.values(ports)
+        );
+    }
+
+    get_arr_payload(msg1, msg2, msg3) {
+        const response = [];
+        const limit = 256;
+        const arr_parties = this.get_arr_parties();
+
+        for (let i = 0; i < arr_parties.length; i++) {
+            const party = arr_parties[i].payload;
+
+            if (!party) {
+                console.warn(`⚠️ Partida inválida en índice ${i}`);
+                continue;
+            }
+
+            party.writeUInt8(msg1, 1);
+            party.writeUInt8(msg2 + i, 2);
+            party.writeUInt8(msg3, 3);
+            party.writeUInt8(0x00, 4);
+
+            if (party[2] <= limit) {
+                response.push(party);
+            } else {
+                console.warn('🚫 Límite de partidas alcanzado, omitiendo...');
             }
         }
-        return response
+
+        return response;
     }
-    get_arr_payload(msg1, msg2, msg3){
-        let response = [],
-        limit    = 256;
-        const arr_parties = this.get_arr_parties()
-        for(let idx in arr_parties){
-            console.log("--party", arr_parties[idx], arr_parties[idx] && arr_parties[idx].payload)
-        
-            let party = arr_parties[idx].payload
-            const i = parseInt(idx)
-            party.writeUint8(msg1, 1)
-            party.writeUint8(msg2 + i, 2)
-            party.writeUint8(msg3 , 3)
-            party.writeUint8(0x00, 4)
-            if(party[2] <= limit){
-                response.push(party)
-                
-            }else{
-                console.warn('no se pueden enviar mas partidas')
-            }
-         
-        }
-        return response      
-    }
-    get_arr_ip_ports(){
-    const partys = this.get_parties()
-        const response = []
-        for(let ip in partys){
-            for(let port in partys[ip]){
-                response.push({ip, port})
+
+    get_arr_ip_ports() {
+        const result = [];
+        for (const [ip, ports] of Object.entries(this.members)) {
+            for (const port of Object.keys(ports)) {
+                result.push({ ip, port });
             }
         }
-        return response
+        return result;
     }
-    init_update_thread(){
-        console.log('inicio el thread')
+
+    #initUpdateThread() {
+        console.log('⚙️ Iniciando worker de actualización...');
         this.#worker = new Worker(path.resolve(__dirname, '../libs/helper.js'));
 
-        this.#worker.on('message', (msg) => this.process_msg_worker(msg));
-
+        this.#worker.on('message', (msg) => this.#processMsgWorker(msg));
         this.#worker.on('error', (err) => {
-            console.error('Error en el worker:', err);
-            clearInterval(this.#interv)
+            console.error('❌ Error en el worker:', err);
         });
-
         this.#worker.on('exit', (code) => {
-            console.log('Worker finalizado con código:', code);
-            clearInterval(this.#interv)
+            console.warn(`⚠️ Worker finalizado con código: ${code}`);
         });
-        
     }
-    process_msg_worker(msg){
-        const arr_msg = msg.split("---")
-        const address = arr_msg[1]
-        const port = arr_msg[2]
-        switch(arr_msg[0]){
+
+    #processMsgWorker(msg) {
+        const [action, address, port, payload] = msg.split('---');
+
+        switch (action) {
             case 'DELETE':
-                    console.error('party afk durante mucho tiempo ', address, port)
-                    this.delete_party(address, port)
+                console.warn(`🗑 Eliminando partida inactiva: ${address}:${port}`);
+                this.delete_party(address, port);
                 break;
+
             case 'UPDATE':
-                    const hex_payload = arr_msg[3]
-                    console.log('nuevos detalles por setear: ', address, port)
-                    this.update_party(address, port, hex_payload)
-                break;    
-        }
+                console.log(`🔁 Actualizando partida desde worker: ${address}:${port}`);
+                this.update_party(address, port, payload);
+                break;
 
-      
+            default:
+                console.warn(`❓ Mensaje desconocido desde el worker: ${msg}`);
+        }
     }
-    update_party(address, port, hex_payload){
-        if(!this.members[address]){
-            console.warn(`ip no partida: ${address}: ${port}`)
-            return false
-        }
-        if(!this.members[address][port]){
-            console.warn(`ippuerto no partida: ${address}: ${port}`)
-            return false
-        }
-
-        this.members[address][port].update_data_party(hex_payload)
-    }
-    delete_party(address, port){
-        if(!this.members[address]){
-            console.error(new Error(`No existe la entidad con ip y puerto:\n${address}:${port}`))
-            return false
-        }
-        if(!this.members[address][port]){
-            console.error(new Error(`No existe la entidad con ip y puerto:\n${address}:${port}`))
-            return false
-        }
-        delete this.members[address][port];
-        if(Object.keys(this.members[address]).length === 0){
-            delete this.members[address];
-        }
-        console.log(`Partida eliminada: ${address}:${port}`)
-    }
-}
+};

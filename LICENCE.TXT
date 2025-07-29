@@ -1,7 +1,9 @@
-Licencia de uso restringido
+LICENCIA DE USO RESTRINGIDO
 
-Este software es propiedad del autor. Queda prohibida su copia, distribución, modificación o utilización, total o parcial, sin la autorización previa y por escrito del titular.
+Este software es propiedad exclusiva del autor. Queda estrictamente prohibida su copia, distribución, modificación o utilización —total o parcial— sin autorización previa y por escrito del titular.
 
-Cualquier uso no autorizado será considerado una violación de los derechos de autor y podrá dar lugar a acciones legales.
+Este software se proporciona únicamente con fines educativos, de demostración o experimentación personal. No se permite su uso en entornos comerciales o de producción sin el consentimiento explícito del autor.
+
+Cualquier uso no autorizado constituye una infracción de los derechos de autor y podrá dar lugar a acciones legales conforme a la legislación vigente.
 
 © [srXendo], [2025]

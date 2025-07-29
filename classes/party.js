@@ -1,79 +1,108 @@
-module.exports = class party {
+module.exports = class Party {
     ip;
     port;
     payload;
-    refresh_date;
-    detail = null
-    constructor(ip, port, payload){
-        this.ip = ip
-        this.port = port
-        this.payload = payload
-        this.refresh_date = new Date()
+    refreshDate;
+    detail = null;
+
+    constructor(ip, port, payload) {
+        this.ip = ip;
+        this.port = port;
+        this.payload = payload;
+        this.refreshDate = new Date();
     }
-    update_data_party(hex_payload){
-        this.refresh_date = new Date().getTime()
-        const buff_payload_detail = Buffer.from(hex_payload, 'hex')
-        this.detail = this.extract_data(buff_payload_detail)
-        if(this && this.payload){
-            const port = this.set_detal_data(this.payload, this.detail.currentPlayers, this.detail.maxPlayers)
-            if(port){
-                this.payload = port
+
+    /**
+     * Actualiza los datos de la partida a partir de un payload en formato hexadecimal
+     */
+    update_data_party(hexPayload) {
+        this.refreshDate = Date.now();
+        const bufferPayloadDetail = Buffer.from(hexPayload, 'hex');
+
+        this.detail = this.extract_data(bufferPayloadDetail);
+
+        if (this.payload && this.detail) {
+            const updatedPayload = this.set_detail_data(this.payload, this.detail.currentPlayers, this.detail.maxPlayers);
+            if (updatedPayload) {
+                this.payload = updatedPayload;
             }
-            console.log('detalles extraidos: ', this.detail)
+            console.log('Detalles extraídos:', this.detail);
         }
     }
+
+    /**
+     * Extrae el número de jugadores actuales y máximos desde el buffer
+     */
     extract_data(buffer) {
-        let offset_byte = buffer.readUInt8(4)
-        let idx = 0
-        if(buffer.readUInt8(offset_byte+1) !== 0x00 && buffer.readUInt8(offset_byte+2) === 0x00  ){
-            offset_byte = offset_byte + 2
+        let offsetByte = buffer.readUInt8(4);
+        let nameStartIdx = 0;
+
+        // Ajuste de offset si hay separadores especiales
+        if (buffer.readUInt8(offsetByte + 1) !== 0x00 && buffer.readUInt8(offsetByte + 2) === 0x00) {
+            offsetByte += 2;
         }
-        for(let i = offset_byte+1;  i < buffer.length; i++){
-            if((buffer.readUInt8(i) > 0x20 && buffer.readUInt8(i) < 0x7E) && buffer.readUInt8(i) !== 0x00){
-                idx = i
+
+        // Busca el inicio del nombre de la sala
+        for (let i = offsetByte + 1; i < buffer.length; i++) {
+            const byte = buffer.readUInt8(i);
+            if (byte > 0x20 && byte < 0x7E && byte !== 0x00) {
+                nameStartIdx = i;
                 break;
             }
         }
-        const actual_players = buffer.readUInt8(idx-2)
-        const max_players = buffer.readUInt8(idx-1)
-        console.log('encontrado nombre idx',  idx, actual_players, max_players)
+
+        const currentPlayers = buffer.readUInt8(nameStartIdx - 2);
+        const maxPlayers = buffer.readUInt8(nameStartIdx - 1);
+
+        console.log('Encontrado nombre idx:', nameStartIdx, currentPlayers, maxPlayers);
+
         return {
-          currentPlayers: actual_players,
-          maxPlayers: max_players
+            currentPlayers,
+            maxPlayers
         };
-       
-
     }
-    set_detal_data(buffer, cPlayers, mPlayers){
-        const portOffsetStart = 72 
+
+    /**
+     * Escribe los jugadores actuales y máximos en el buffer de payload
+     */
+    set_detail_data(buffer, currentPlayers, maxPlayers) {
+        const portOffsetStart = 72;
         let portOffsetEnd = -1;
-        for(let i = portOffsetStart; i < portOffsetStart + 3; i++){
-            portOffsetEnd = i
-            if(buffer[i] === 0x00 ){
-                break;  
-            }
-            
-        }
-        if(portOffsetEnd < 0){
-            console.error('puerto no encontrado para datos de partida: ', buffer.toString('hex'))
-            return false
-        }
-       
-        let offset_byte = portOffsetEnd
-        let idx = 0
-        if(buffer.readUInt8(offset_byte+1) !== 0x00 && buffer.readUInt8(offset_byte+2) === 0x00  ){
-            offset_byte = offset_byte + 2
-        }
-        for(let i = offset_byte+1;  i < buffer.length; i++){
-            if((buffer.readUInt8(i) > 0x20 && buffer.readUInt8(i) < 0x7E) && buffer.readUInt8(i) !== 0x00){
-                idx = i
+
+        // Buscar el final del puerto en el payload
+        for (let i = portOffsetStart; i < portOffsetStart + 3; i++) {
+            if (buffer[i] === 0x00) {
+                portOffsetEnd = i;
                 break;
             }
         }
-        buffer.writeUInt8(cPlayers, idx-2);
-        buffer.writeUInt8(mPlayers, idx-1);
 
-        return buffer
+        if (portOffsetEnd < 0) {
+            console.error('Puerto no encontrado en el buffer:', buffer.toString('hex'));
+            return false;
+        }
 
+        let offsetByte = portOffsetEnd;
+        let nameStartIdx = 0;
+
+        // Ajuste de offset si hay separadores especiales
+        if (buffer.readUInt8(offsetByte + 1) !== 0x00 && buffer.readUInt8(offsetByte + 2) === 0x00) {
+            offsetByte += 2;
+        }
+
+        // Buscar inicio del nombre de la sala
+        for (let i = offsetByte + 1; i < buffer.length; i++) {
+            const byte = buffer.readUInt8(i);
+            if (byte > 0x20 && byte < 0x7E && byte !== 0x00) {
+                nameStartIdx = i;
+                break;
+            }
+        }
+
+        // Escribir jugadores actuales y máximos en el buffer
+        buffer.writeUInt8(currentPlayers, nameStartIdx - 2);
+        buffer.writeUInt8(maxPlayers, nameStartIdx - 1);
+
+        return buffer;
     }
-}
+};

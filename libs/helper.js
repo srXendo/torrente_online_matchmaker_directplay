@@ -1,66 +1,75 @@
-
 const { parentPort } = require('worker_threads');
-const c_cache_manager = require('./../classes/cache_manager')
-let intrv = -1
-const frequency_refresh = 1000 * 15
+const dgram = require('dgram');
+const c_cache_manager = require('./../classes/cache_manager');
 
+const FREQUENCY_REFRESH = 1000 * 15; // 15 segundos
+const HOST = '0.0.0.0';
+const PORT = 8989;
 
+let intervalId = null;
 
-try{
-
-  const dgram = require('dgram');
+try {
   const server = dgram.createSocket('udp4');
-  const cache_manager = new c_cache_manager(server)
+  const cache_manager = new c_cache_manager(server);
+
+  // Escucha mensajes del hilo principal (nuevas entidades a monitorear)
   parentPort.on('message', (msg) => {
-    console.log('funciona el worker')
-    const arr_port_address = msg.split('---')
-    cache_manager.add_entity(arr_port_address[0], arr_port_address[1])
+    const [address, port] = msg.split('---');
+    if (address && port) {
+      console.log(`📥 [\x1b[35mWORKER\x1b[0m] Registrando nueva entidad: ${address}:${port}`);
+      cache_manager.add_entity(address, port);
+    } else {
+      console.warn(`⚠️ [\x1b[35mWORKER\x1b[0m] Mensaje malformado: "${msg}"`);
+    }
   });
+
+  // Escucha respuestas de las partidas vivas
   server.on('message', (msg, rinfo) => {
-    cache_manager.entity_update(rinfo.address, rinfo.port)
-    parentPort.postMessage(`${'UPDATE'}---${rinfo.address}---${rinfo.port}---${msg.toString('hex')}`);
+    console.log(`📡 [\x1b[35mWORKER\x1b[0m] Respuesta recibida de ${rinfo.address}:${rinfo.port}`);
+    cache_manager.entity_update(rinfo.address, rinfo.port);
+
+    // Enviar la actualización al hilo principal
+    parentPort.postMessage(`UPDATE---${rinfo.address}---${rinfo.port}---${msg.toString('hex')}`);
   });
+
   server.on('listening', () => {
     const saddress = server.address();
-    console.log(`Servidor UDP escuchando en ${saddress.address}:${saddress.port}`);
-    console.log(`------INICIO DE LA ESCUCHA------`);
-    start()
-
+    console.log(`📢 [\x1b[35mWORKER\x1b[0m] Escuchando en ${saddress.address}:${saddress.port}`);
+    startRefreshLoop();
   });
 
   server.on('error', (err) => {
-    console.error(`Error en el servidor: ${err.message}`);
+    console.error(`❌ [\x1b[35mWORKER\x1b[0m] Error en socket UDP: ${err.message}`);
     server.close();
   });
 
-  // Configuración del servidor
-  const HOST = '0.0.0.0';
-  server.bind(8989, HOST);
+  server.bind(PORT, HOST);
 
-  function start(){
-    setInterval(async ()=>{
-      console.log('iniciando intervalo')
-      if(cache_manager.is_refresh()){
-        console.warn('ya se esta refrescando la cache')
-        return
+  function startRefreshLoop() {
+    intervalId = setInterval(async () => {
+      if (cache_manager.is_refresh()) {
+        console.warn('🔁 [\x1b[35mWORKER\x1b[0m] Caché ya está en refresco, omitiendo...');
+        return;
       }
-      cache_manager.set_refresh(true)
-      try{
-        await cache_manager.send_update_tick()
-        cache_manager.set_refresh(false)
-          
-      }catch(err){
-          cache_manager.set_refresh(false)
-          console.error(new Error(err.stack))
-          console.error(new Error(err))
-        
+
+      cache_manager.set_refresh(true);
+
+      try {
+        console.log('🔄 [\x1b[35mWORKER\x1b[0m] Ejecutando tick de actualización');
+        const updated = await cache_manager.send_update_tick();
+        console.log(`✅ [\x1b[35mWORKER\x1b[0m] Refrescadas ${updated.filter(Boolean).length} entidades`);
+      } catch (err) {
+        console.error('❌ [\x1b[35mWORKER\x1b[0m] Error durante tick de actualización:', err.stack || err);
+      } finally {
+        cache_manager.set_refresh(false);
       }
-    },frequency_refresh)
+    }, FREQUENCY_REFRESH);
   }
-}catch(err){
-  if(intrv){
-    intrv
+
+} catch (err) {
+  if (intervalId) {
+    clearInterval(intervalId);
   }
-  console.error(new Error(err.stack))
-  throw new Error(err)
+  console.error('💥 [\x1b[35mWORKER\x1b[0m] Error crítico:', err.stack || err);
+  throw err;
 }

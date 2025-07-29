@@ -1,8 +1,9 @@
 const c_entity = require('./entity');
 const { parentPort } = require('worker_threads');
-const MAX_TRYS = 7 * 8;
-const REFRESH_EXPIRATION = 1000 * 60 * 2; // 2 minutos
 const https = require('https');
+
+const MAX_TRYS = 3; // Solo 2 intentos antes de aplicar la eliminación casi inmediata
+const MAX_WAIT_RESPONSE = 2000; // Espera máxima para recibir respuesta (2s)
 
 module.exports = class cache_manager {
     entities = {};
@@ -16,40 +17,41 @@ module.exports = class cache_manager {
     async send_tick_to_address_port(address, port) {
         this.entity_try_update(address, port);
 
-        const lastRefresh = this.entity_get_refresh(address, port);
-        const trys = this.entity_get_trys(address, port);
-        const now = Date.now();
-
-        console.log(`Entidad: ${address}:${port} | trys=${trys} | lastRefresh=${lastRefresh ? new Date(lastRefresh).toISOString() : 'n/a'} | diff=${lastRefresh ? now - lastRefresh : 'n/a'}ms`);
-
-        // Si no hay fecha de actualización, forzamos la eliminación
-        if (!lastRefresh) {
-            console.warn(`lastRefresh vacío para ${address}:${port} — eliminando por seguridad`);
-            this.delete_entity(address, port);
-            parentPort.postMessage(`DELETE---${address}---${port}`);
-            return false;
-        }
-
-        // Si venció el tiempo y se superó el límite de intentos, eliminamos
-        if ((now - lastRefresh) > REFRESH_EXPIRATION || trys > MAX_TRYS) {
-            console.warn(`Eliminando ${address}:${port} — inactivo por ${now - lastRefresh}ms, trys=${trys}`);
-            this.delete_entity(address, port);
-            parentPort.postMessage(`DELETE---${address}---${port}`);
-            return false;
-        }
-
-        // Si está todo bien, enviamos el paquete UDP de ping
         const payload = Buffer.from('000231f2011242191fb8bb154e4401763631007932', 'hex');
+        const trys = this.entity_get_trys(address, port);
+        const responseKey = `${address}:${port}`;
+        let responded = false;
 
-        return new Promise((resolve) => {
+        const responseHandler = (msg, rinfo) => {
+            if (rinfo.address === address && rinfo.port === Number(port)) {
+                responded = true;
+            }
+        };
+
+        this.#server.on('message', responseHandler);
+
+        await new Promise((resolve) => {
             this.#server.send(payload, port, address, (err) => {
                 if (err) {
-                    console.error(new Error(`Error enviando paquete a ${address}:${port}: ${err.message}`));
-                    return resolve(false);
+                    console.error(`❌ No se pudo enviar paquete a ${address}:${port}`);
+                    resolve();
+                    return;
                 }
-                resolve(true);
+                setTimeout(resolve, MAX_WAIT_RESPONSE);
             });
         });
+
+        this.#server.off('message', responseHandler);
+
+        if (!responded) {
+            console.warn(`🚫 Sin respuesta de ${address}:${port} — eliminando`);
+            this.delete_entity(address, port);
+            parentPort.postMessage(`DELETE---${address}---${port}`);
+            return false;
+        }
+
+        console.log(`✅ ${address}:${port} respondió correctamente`);
+        return true;
     }
 
     send_update_tick() {
@@ -84,10 +86,10 @@ module.exports = class cache_manager {
         if (!this.entities[address]) this.entities[address] = {};
 
         if (!this.entities[address][port]) {
-            console.log(`Añadiendo entidad nueva: ${address}:${port}`);
+            console.log(`✔️ Añadiendo entidad nueva: ${address}:${port}`);
             this.entities[address][port] = new c_entity(address, port);
         } else {
-            console.log(`Ya existe: ${address}:${port}`);
+            console.log(`🧩 La entidad ya existe: ${address}:${port}`);
         }
     }
 
