@@ -65,68 +65,68 @@ try {
   // Procesamiento de mensajes UDP
   function replaceBinaryIp(buffer, newIpStr, newPort) {
     console.log(`remplaza ip. Buffer antiguo: ${buffer.toString('hex')}`);
-  
+
     const BYTE_SEPARATOR = 0x11;
     const oldBuffer = Buffer.from(buffer); // Copia defensiva
-  
+
     const startOffset = oldBuffer.indexOf(BYTE_SEPARATOR) + 1;
     const endOffset = oldBuffer.indexOf(0x00, startOffset);
-  
+
     if (startOffset === 0 || endOffset === -1) {
       console.warn('⚠️ No se encontró IP ASCII válida en el buffer.');
       return buffer;
     }
-  
+
     const originalIp = oldBuffer.slice(startOffset, endOffset);
     const ipLength = originalIp.length;
-  
+
     let paddedIp = newIpStr;
     if (newIpStr.length < ipLength) {
       paddedIp = newIpStr.padEnd(ipLength, '\x00');
     }
-  
+
     const ipBytes = Buffer.from(paddedIp, 'ascii');
     const beforeIp = oldBuffer.slice(0, startOffset);
     const afterIp = oldBuffer.slice(endOffset);
-  
+
     afterIp.writeUInt8(0x00, 0); // Asegura el terminador
     const updatedBuffer = Buffer.concat([beforeIp, ipBytes, afterIp]);
-  
+
     console.log(`Reemplazada IP "${originalIp}" -> "${newIpStr}" en offset ${startOffset} hasta ${endOffset}`);
-  
+
     if (newPort) {
       const signature = Buffer.from([0xB8, 0x22]);
       const portOffset = updatedBuffer.indexOf(signature);
       if (portOffset === -1) {
         throw new Error('❌ No se encontró la secuencia B8 22 para puerto');
       }
-  
+
       updatedBuffer.writeUInt16LE(parseInt(newPort), portOffset);
       console.log(`Puerto ${newPort} escrito en offset ${portOffset}`);
     }
-  
+
     console.log(`remplaza ip. Buffer nuevo: ${updatedBuffer.toString('hex')}`);
     return updatedBuffer;
   }
-  
-  
+
+
   function extractIpAndPort(buffer) {
     const ascii = buffer.toString('ascii');
-  
+
     // Buscar la primera IP en el buffer
     const ipMatch = ascii.match(/(\d{1,3}(?:\.\d{1,3}){3})/);
     if (!ipMatch) return null;
-  
+
     const ip = ipMatch[1];
     const ipOffset = ascii.indexOf(ip);
-  
+
     // Buscar el valor del puerto 8888 en formato Little Endian (0x22B8 -> B8 22)
     const portLE = Buffer.alloc(2);
     portLE.writeUInt16LE(8888, 0);
-  
+
     const portOffset = buffer.indexOf(portLE, ipOffset);
     const port = portOffset !== -1 ? buffer.readUInt16LE(portOffset) : null;
-  
+
     return {
       ip,
       port,
@@ -134,18 +134,18 @@ try {
       portOffset: port !== null ? portOffset : null,
     };
   }
-  
+
   function get_port(buffer) {
     const portOffsetStart = 72;
     const maxScanLength = 3;
-  
+
     // Buscar el final del puerto (hasta que se encuentre un 0x00 o se agote el límite)
     let portOffsetEnd = buffer.indexOf(0x00, portOffsetStart);
     if (portOffsetEnd === -1 || portOffsetEnd > portOffsetStart + maxScanLength) {
       console.error('❌ Puerto no encontrado o fuera de rango');
       return null;
     }
-  
+
     try {
       return buffer.readUInt16LE(portOffsetStart);
     } catch (err) {
@@ -153,20 +153,20 @@ try {
       return null;
     }
   }
-  
+
   let aux = []//[replaceBinaryIp(Buffer.from(aux_hex, 'hex'), "1.1.1.1")]
 
   function process_date(date_start, date_hex) {
     const processingTime = Date.now() - date_start;
     const adjustedTimestamp = date_hex + processingTime;
-  
+
     const hexStr = adjustedTimestamp.toString(16).padStart(8, '0');
     const result = Buffer.alloc(4);
     result.write(hexStr, 'hex');
-  
+
     return result;
   }
-  
+
   function processCFRAME(message, rcon) {
     const bCommand = message.readUInt8(0);
     const bExtOpcode = message.readUInt8(1);
@@ -194,8 +194,8 @@ try {
           response = Buffer.from('8006010004040000025a7318', 'hex')
           response.writeUInt8(message.readUInt8(3), 4); // bExtOpcode (SACK)
           response.writeUInt8(message.readUInt8(2), 5); // bExtOpcode (SACK)
-          response.set(idSession, response.length - 4);        
-          
+          response.set(idSession, response.length - 4);
+
         }else if(message.readUInt8(1) === 0x08){
           response = Buffer.alloc(8);
           response = Buffer.from('8006010004040000025a7318', 'hex')
@@ -216,25 +216,38 @@ try {
           })*/
           let last_idx = message.readUInt8(2) 
           const arr_payloads = manager_party.get_arr_payload( message.readUInt8(1), message.readUInt8(2), message.readUInt8(3))
-                 
-          console.log(`Numero de partidas a enviar: ${arr_payloads.length}`)
-          for(let payload of arr_payloads){
-            // console.log('payload send: ', payload.toString('hex'))
-            server.send(payload, rcon.port, rcon.address, (err)=>{
-                if(err){
-                  console.error('no se ha podido mandar partida')
-                }
-                console.log('partida enviada')
-            })
+
+          const arr_parties = manager_party.get_arr_parties();
+
+          console.log(`🔫 [\x1b[33mMATCHMAKER\x1b[0m] Numero de partidas a enviar: ${arr_payloads.length}`);
+
+          for (let i = 0; i < arr_payloads.length; i++) {
+            const payload = arr_payloads[i];
+            const party = arr_parties[i];
+
+            if (party && party.detail) {
+              const actualizado = party.set_detail_data(Buffer.from(party.payload), party.detail.currentPlayers, party.detail.maxPlayers);
+              if (actualizado) {
+                arr_payloads[i] = actualizado;
+              }
+            }    
+
+            server.send(arr_payloads[i], rcon.port, rcon.address, (err) => {
+              if (err) {
+                console.error('❌ [\x1b[33mMATCHMAKER\x1b[0m] no se ha podido mandar partida');
+              } else {
+                console.log('⚔️ [\x1b[33mMATCHMAKER\x1b[0m] partida enviada');
+              }
+            });
           }
           let end_idx = 0x02 + arr_payloads.length
           response = Buffer.from('3f0803046b66c362', 'hex')
           response[3] = end_idx + 1
           response.writeUInt8(0x3f, 0); // bCommand
           response.writeUInt8(0x09, 1); // bExtOpcode (SACK)
-        
+
           response.set(idSession, response.length - 4);
-  
+
         }else if (message.length >= 50){
           
           const port = get_port(message)
@@ -264,8 +277,8 @@ try {
           }else{
             response.writeUInt8(message.readUInt8(2)+1, 5);
           }
-           // bExtOpcode (SACK)
-  
+          // bExtOpcode (SACK)
+
           response.set(idSession, response.length - 4);
         }else if(message.readUInt8(1) === 0x01){
           response = Buffer.from('8006010004040000025a7318', 'hex')
