@@ -2,7 +2,7 @@ try {
   const dgram = require('dgram');
   const server = dgram.createSocket('udp4');
   const ManagerParty = require('./classes/manager_party');
-  const manager_party = new ManagerParty()
+  const manager_party = new ManagerParty();
 
   const fs = require('fs');
 
@@ -139,32 +139,6 @@ try {
     return oldBuffer;
   }
 
-
-  function extractIpAndPort(buffer) {
-    const ascii = buffer.toString('ascii');
-
-    // Buscar la primera IP en el buffer
-    const ipMatch = ascii.match(/(\d{1,3}(?:\.\d{1,3}){3})/);
-    if (!ipMatch) return null;
-
-    const ip = ipMatch[1];
-    const ipOffset = ascii.indexOf(ip);
-
-    // Buscar el valor del puerto 8888 en formato Little Endian (0x22B8 -> B8 22)
-    const portLE = Buffer.alloc(2);
-    portLE.writeUInt16LE(8888, 0);
-
-    const portOffset = buffer.indexOf(portLE, ipOffset);
-    const port = portOffset !== -1 ? buffer.readUInt16LE(portOffset) : null;
-
-    return {
-      ip,
-      port,
-      ipOffset,
-      portOffset: port !== null ? portOffset : null,
-    };
-  }
-
   function get_port(buffer) {
     const portOffsetStart = 72;
     const maxScanLength = 3;
@@ -184,8 +158,6 @@ try {
     }
   }
 
-  let aux = []//[replaceBinaryIp(Buffer.from(aux_hex, 'hex'), "1.1.1.1")]
-
   function process_date(date_start, date_hex) {
     const processingTime = Date.now() - date_start;
     const adjustedTimestamp = date_hex + processingTime;
@@ -199,16 +171,12 @@ try {
 
   function processCFRAME(message, rcon) {
     const bCommand = message.readUInt8(0);
-    const bExtOpcode = message.readUInt8(1);
     let response = null
     let idSession = message.slice(8, 12)
     switch (bCommand) {
       case 0x7f:
         token = message
-        //console.log('Mensaje_type_4: 0x7f ', message.toString('hex'))
-        //console.log('Mensajes type 4 recibidos: ')
-        const bSeq = message.readUInt8(2); // Secuencia del DFRAME
-        const bNRcv = message.readUInt8(3); // Próximo esperado
+        //console.log('📩 Mensaje_type_4: 0x7f ')
         if (message.readUInt8(2) == 0x01) {
           response = Buffer.from('7f000102c2000000000000000000000050000000010000000000000002000000e00000001400000000000000000000000000000000000000000000000000000093715e51dee002479ae27c0866e7511a3e49e9edc86a154f8d018b163200b9669071ce510900000000000000020000000000000091717e5100000000020400000200000000000000070000000000000000000000000000000000000000000000000000009071ce510000000000020000090000000000000007000000cc0000001400000000000000000000000000000000000000430068006100760061006c006f00740065000000430068006100760061006c006f00740065000000', 'hex')
         } else if (message.readUInt8(2) == 0x02) {
@@ -217,8 +185,7 @@ try {
         break;
       case 0x3f:
         idSession = message.slice(4, 8)
-        //console.log('Mensaje_type_3: 0x3f ', message.toString('hex'))
-        //console.log('Mensajes type 3 recibidos: ')
+        //console.log('📩 Mensaje_type_3: 0x3f ')
         if (message.readUInt8(1) === 0x02) {
           response = Buffer.alloc(8);
           response = Buffer.from('8006010004040000025a7318', 'hex')
@@ -232,6 +199,7 @@ try {
           response.writeUInt8(message.readUInt8(3), 4); // bExtOpcode (SACK)
           response.writeUInt8(message.readUInt8(2), 5); // bExtOpcode (SACK)
           response.set(idSession, response.length - 4);
+
         } else if (message.readUInt8(1) === 0x07) {
           response = Buffer.alloc(8);
           response = Buffer.from('8006010004040000025a7318', 'hex')
@@ -239,20 +207,14 @@ try {
           response.writeUInt8(message.readUInt8(2), 5); // bExtOpcode (SACK)
           response.set(idSession, response.length - 4);
         } else if (message.length >= 30 && message.length < 50) {
-          //console.log('\n\ndataFilter!!! recive!!!\n\n')
-          /**/
-          /*server.send(response, rcon.port, rcon.addres, (err)=>{
-            console.error(err)
-          })*/
-          let last_idx = message.readUInt8(2)
-          const arr_payloads = manager_party.get_arr_payload(message.readUInt8(1), message.readUInt8(2), message.readUInt8(3))
+          //console.log('\n\n  🚨 dataFilter!!! recive!!! 🚨\n\n')
 
+          const arr_payloads = manager_party.get_arr_payload(message.readUInt8(1), message.readUInt8(2), message.readUInt8(3))
           const arr_parties = manager_party.get_arr_parties();
 
           console.log(`🔫 [\x1b[33mMATCHMAKER\x1b[0m] Numero de partidas a enviar: ${arr_payloads.length}`);
 
           for (let i = 0; i < arr_payloads.length; i++) {
-            const payload = arr_payloads[i];
             const party = arr_parties[i];
 
             if (party && party.detail) {
@@ -270,18 +232,18 @@ try {
               }
             });
           }
+
           let end_idx = 0x02 + arr_payloads.length
           response = Buffer.from('3f0803046b66c362', 'hex')
           response[3] = end_idx + 1
           response.writeUInt8(0x3f, 0); // bCommand
           response.writeUInt8(0x09, 1); // bExtOpcode (SACK)
-
           response.set(idSession, response.length - 4);
 
         } else if (message.length >= 50) {
 
           const port = get_port(message)
-          //console.log('\n\ndatapart!!!\n\n', port)
+          //console.log(`\n\n  🚨 datapart!!! 🚨 port:${port}\n\n`);
           manager_party.add_member(rcon.address, `${port}`, replaceBinaryIp(message, rcon.address, false))
           response = Buffer.from('8006010004040000025a7318', 'hex')
           response.writeUInt8(message.readUInt8(3), 4); // bExtOpcode (SACK)
@@ -293,6 +255,7 @@ try {
           response.writeUInt8(message.readUInt8(3), 4); // bExtOpcode (SACK)
           response.writeUInt8(message.readUInt8(2) + 1, 5); // bExtOpcode (SACK)
           response.set(idSession, response.length - 4);
+
         } else if (message.readUInt8(1) === 0x09) {
           response = Buffer.from('80060100040400008f82d82d2', 'hex')
           response.writeUInt8(message.readUInt8(3), 4); // bExtOpcode (SACK)
@@ -307,6 +270,7 @@ try {
           } else {
             response.writeUInt8(message.readUInt8(2) + 1, 5);
           }
+
           // bExtOpcode (SACK)
 
           response.set(idSession, response.length - 4);
@@ -315,6 +279,7 @@ try {
           response.writeUInt8(message.readUInt8(3), 4); // bExtOpcode (SACK)
           response.writeUInt8(message.readUInt8(2) + 1, 5); // bExtOpcode (SACK)
           response.set(idSession, response.length - 4);
+
         } else if (message.readUInt8(2) === 0x03) {
           response = Buffer.alloc(8);
           response = Buffer.from('8006010004040000025a7318', 'hex')
@@ -323,16 +288,15 @@ try {
         }
 
         break;
+
       case 0x80: // FRAME_EXOPCODE_SACK
-        //console.log('Mensaje_type_2: 0x80')
-        //console.log('Mensajes type 2 recibidos: ')
+        //console.log('📩 Mensaje_type_2: 0x80')
         if (message.readUInt8(1) === 0x06) {
           if (message.readUint8(4) === 0x08 && message.readUInt8(5) === 0x05) {
             response = Buffer.from("3f080511", 'hex')
           } else {
             response = Buffer.from("3f020000d2ed430c", "hex")
           }
-          /*response.set(process_date(Date.now(), parseInt(message.readUInt32LE(8), 16)), 8);*/
         } else if (message.readUInt8(1) === 0x02) {
           response = Buffer.alloc(8);
           response.writeUInt8(0x3f, 0); // bCommand
@@ -340,15 +304,14 @@ try {
           response.writeUInt8(0x00, 2); // bExtOpcode (SACK)
           response.writeUInt8(0x00, 3); // bExtOpcode (SACK)
           response.set(idSession, response.length - 4);
-
         }
 
         break;
+
       case 0x88:
         const startTime = Date.now(); // Tiempo de inicio (en milisegundos)
         last_start = startTime
-        //console.log('Mensaje_type_1: 0x88')
-        //console.log('Mensajes type 1 recibidos: ')
+        //console.log('📩 Mensaje_type_1: 0x88')
         response = Buffer.alloc(16);
         response.writeUInt8(0x88, 0);
         response.writeUInt8(0x02, 1);
@@ -361,15 +324,14 @@ try {
         const timestamp_calc = process_date(startTime, timestampHex)
         last_date = timestamp_calc
         response.set(timestamp_calc, 12);
-        //console.log('response2 buffer: ', response)
         break;
+
       default:
-        console.error('CFRAME no soportado: bExtOpcode desconocido');
-        //throw new Error()
+        console.error('🚨 CFRAME no soportado: bExtOpcode desconocido');
         response = null;
     }
-    //console.log('message buffer: ', message.toString('hex'))
-    //console.log('response: ', response)
+    //console.log('📝 [\x1b[32mRECV\x1b[0m]:', message.toString('hex'))
+    //console.log('📝 [\x1b[32mSEND\x1b[0m]:', response.toString('hex'))
     return response
   }
 
@@ -377,9 +339,7 @@ try {
     if (message.length >= 4 && (message.readUInt8(0) == 0x88 || (message.readUInt8(0) == 0x80) || (message.readUInt8(0) == 0x3f) || (message.readUInt8(0) == 0x7f) || (message.readUInt8(0) == 0x77))) {
       return processCFRAME(message, rcon);
     } else {
-      //console.log('msg:', message.toString('hex'), (message.readUInt8(0) == 0x3f))
-      console.error('Mensaje no reconocido o inválido');
-      //throw new Error('Mensaje no reconocido o inválido')
+      console.error('❌ Mensaje no reconocido o inválido');
       return null;
     }
   }

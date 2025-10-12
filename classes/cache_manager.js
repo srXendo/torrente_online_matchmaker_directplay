@@ -1,9 +1,7 @@
 const c_entity = require('./entity');
 const { parentPort } = require('worker_threads');
-const https = require('https');
 
-const MAX_TRYS = 2; // Solo 2 intentos antes de aplicar la eliminación inmediata
-const MAX_WAIT_RESPONSE = 1000; // Espera máxima para recibir respuesta (1s)
+const MAX_WAIT_RESPONSE = 1000; // Espera máxima para recibir respuesta (1000 = 1 segundo)
 
 module.exports = class cache_manager {
     entities = {};
@@ -18,8 +16,6 @@ module.exports = class cache_manager {
         this.entity_try_update(address, port);
 
         const payload = Buffer.from('000231f2011242191fb8bb154e4401763631007932', 'hex');
-        const trys = this.entity_get_trys(address, port);
-        const responseKey = `${address}:${port}`;
         let responded = false;
 
         const responseHandler = (msg, rinfo) => {
