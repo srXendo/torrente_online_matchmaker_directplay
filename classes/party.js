@@ -47,7 +47,7 @@ module.exports = class Party {
     extract_data(buffer) {
         let offsetByte = buffer.readUInt8(4);
         let nameStartIdx = 0;
-        
+
         // Ajuste de offset si hay separadores especiales
         if (buffer.readUInt8(offsetByte + 1) !== 0x00 && buffer.readUInt8(offsetByte + 2) === 0x00) {
             offsetByte += 2;
@@ -87,7 +87,7 @@ module.exports = class Party {
             console.warn('⚠️ No se encontró la firma "MP_" en el buffer');
         }
 
-        console.log('Encontrado nombre idx:', nameStartIdx, currentPlayers, maxPlayers, mapName);
+        //console.log('Encontrado nombre idx:', nameStartIdx, currentPlayers, maxPlayers, mapName);
 
         return {
             currentPlayers,
@@ -147,6 +147,11 @@ module.exports = class Party {
                 mapBytes.copy(copy, mapOffset);
                 if (mapBytes.length < 20) {
                     copy.fill(0x00, mapOffset + mapBytes.length, mapOffset + 20);
+
+                    if (mapName.startsWith('MP_DMT')) copy.writeUInt8(0x03, mapOffset - 1);
+                    else if (mapName.startsWith('MP_DM')) copy.writeUInt8(0x00, mapOffset - 1);
+                    else if (mapName.startsWith('MP_B')) copy.writeUInt8(0x01, mapOffset - 1);
+                    else if (mapName.startsWith('MP_DO')) copy.writeUInt8(0x02, mapOffset - 1);
                 }
             }
         }
