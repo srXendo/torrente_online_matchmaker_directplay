@@ -40,6 +40,13 @@ function reemplazarNombreMapa(buffer, nombreActual, nombreNuevo) {
   if (nuevoBytes.length < originalBytes.length) {
     nuevoBuffer.fill(0x00, offset + nuevoBytes.length, offset + originalBytes.length);
   }
+
+  // Asignar el byte según el tipo de mapa
+  if (nombreNuevo.startsWith('MP_DMT')) nuevoBuffer.writeUInt8(0x03, offset - 1);
+  else if (nombreNuevo.startsWith('MP_DM')) nuevoBuffer.writeUInt8(0x00, offset - 1);
+  else if (nombreNuevo.startsWith('MP_B')) nuevoBuffer.writeUInt8(0x01, offset - 1);
+  else if (nombreNuevo.startsWith('MP_DO')) nuevoBuffer.writeUInt8(0x02, offset - 1);
+
   return nuevoBuffer;
 }
 

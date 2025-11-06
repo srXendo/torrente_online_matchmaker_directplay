@@ -28,7 +28,7 @@ module.exports = class ManagerParty {
             this.#worker.postMessage(`${ip}---${portStr}`);
         }
     }
-    
+
     update_party(ip, port, hex_payload) {
         const party = this.members?.[ip]?.[port];
         if (!party) {
@@ -58,7 +58,7 @@ module.exports = class ManagerParty {
     }
 
     get_arr_parties() {
-        return Object.entries(this.members).flatMap(([ip, ports]) =>
+        return Object.values(this.members).flatMap(ports =>
             Object.values(ports)
         );
     }
