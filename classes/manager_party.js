@@ -1,13 +1,15 @@
 const cParty = require('./party');
 const { Worker } = require('worker_threads');
 const path = require('path');
-
+const start_apis = require('./../apis/apis')
 module.exports = class ManagerParty {
     members = {};
     #worker = null;
 
     constructor() {
         this.#initUpdateThread();
+        const startApi = start_apis.bind(this, this)
+        startApi()
     }
 
     add_member(ip, port, payload, refresh = false) {
@@ -23,6 +25,7 @@ module.exports = class ManagerParty {
             return;
         }
         this.members[ip][portStr] = new cParty(ip, portStr, payload, refresh);
+        this.members[ip][portStr].update_data_party(payload)
         console.log(`🟢 Partida añadida: ${ip}:${portStr}`);
         if (this.#worker) {
             this.#worker.postMessage(`${ip}---${portStr}`);
@@ -58,9 +61,11 @@ module.exports = class ManagerParty {
     }
 
     get_arr_parties() {
-        return Object.values(this.members).flatMap(ports =>
-            Object.values(ports)
-        );
+        return Object.values(this.members).flatMap(ports => {
+            console.log(ports)
+            return Object.values(ports)
+        
+        });
     }
 
     get_arr_payload(msg1, msg2, msg3) {
